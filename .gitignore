@@ -3,4 +3,5 @@ backend/__pycache__/
 node_modules/
 .env
 .pytest_cache/
-.DS_Store
+backend/services/__pycache__
+backend/tests/__pycache__
