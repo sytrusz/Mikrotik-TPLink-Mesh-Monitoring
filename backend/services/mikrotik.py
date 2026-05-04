@@ -7,8 +7,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-HOST = os.getenv("MIKROTIK_HOST", "192.168.30.1")
-USER = os.getenv("MIKROTIK_USER", "admin")
+HOST = os.getenv("MIKROTIK_HOST", "")
+USER = os.getenv("MIKROTIK_USER", "")
 PASS = os.getenv("MIKROTIK_PASS", "")
 SSL = os.getenv("MIKROTIK_USE_SSL", "false").lower() == "true"
 
@@ -44,6 +44,8 @@ async def get_interface_stats(client, interface_name):
             json={"interface": interface_name, "once": True, "duration": "1s"},
             timeout=5.0
         )
+        
+        print(f"Interface stats response for {interface_name}: {resp.status_code}")
         if resp.status_code == 200:
             data = resp.json()[0]
             return {
@@ -60,12 +62,9 @@ async def check_internet_reachability(client, interface_name, routing_table=None
         params = {
             "address": "8.8.8.8",
             "count": 2,
-            "interval": "500ms"
+            "interval": "500ms",
+            "interface": interface_name
         }
-        if routing_table:
-            params["routing-table"] = routing_table
-        else:
-            params["interface"] = interface_name
 
         resp = await client.post("/ping", json=params, timeout=5.0)
         
@@ -84,9 +83,11 @@ async def check_internet_reachability(client, interface_name, routing_table=None
                 if "avg-rtt" in r:
                     rtt_str = str(r["avg-rtt"])
                     if "ms" in rtt_str:
-                        avg_rtt = int(rtt_str.replace("ms", ""))
+                        # "12ms713us" -> "12"
+                        avg_rtt = int(rtt_str.split("ms")[0])
                     break
             return success, avg_rtt
+        print(f"Ping request failed for {interface_name} with status code: {resp.status_code}")
     except Exception:
         pass
     return False, 0

@@ -21,7 +21,7 @@ export default function Home() {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 5000);
+    const interval = setInterval(fetchData, 60000);
     return () => clearInterval(interval);
   }, []);
 
@@ -41,7 +41,7 @@ export default function Home() {
     <main className="min-h-screen bg-gray-950 text-gray-100 p-8 font-sans">
       <div className="max-w-4xl mx-auto">
         <header className="text-center mb-10">
-          <h1 className="text-4xl font-bold mb-2 tracking-tight">Network Status</h1>
+          <h1 className="text-4xl font-bold mb-2 tracking-tight">Home Wifi - Network Status</h1>
           <p className="text-gray-500 text-sm">Last updated: {new Date(data.timestamp).toLocaleTimeString()}</p>
         </header>
 
