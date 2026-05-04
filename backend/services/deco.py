@@ -92,7 +92,19 @@ def sync_get_deco_status():
         print(f"Deco API Error: {type(e).__name__}: {str(e)}")
         return None, 0
 
+import time as time_module
+
+_deco_cache = None
+_deco_cache_time = 0
+CACHE_DURATION = 60
+
 async def get_mesh_status():
+    global _deco_cache, _deco_cache_time
+    current_time = time_module.time()
+
+    if _deco_cache and (current_time - _deco_cache_time < CACHE_DURATION):
+        return _deco_cache
+
     nodes = []
     total_clients = 0
     api_success = False
@@ -125,8 +137,14 @@ async def get_mesh_status():
         nodes.append({"name": NODE2_NAME, "online": node2_up, "clients": "---", "rx": "---", "tx": "---"})
         nodes.append({"name": NODE3_NAME, "online": node3_up, "clients": "---", "rx": "---", "tx": "---"})
 
-    return {
+    final_result = {
         "nodes": nodes,
         "totalClients": total_clients if api_success else "---",
         "overallStatus": "Everything looks good" if (api_success or any(n["online"] for n in nodes)) else "Check Connection"
     }
+
+    if api_success:
+        _deco_cache = final_result
+        _deco_cache_time = current_time
+
+    return final_result

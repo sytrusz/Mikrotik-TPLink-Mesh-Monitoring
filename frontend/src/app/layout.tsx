@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Home Wifi - Status",
+  title: "Network Status",
   description: "Network status dashboard for home wifi connections",
 };
 

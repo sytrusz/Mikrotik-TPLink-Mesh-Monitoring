@@ -28,12 +28,8 @@ status_cache = {}
 
 def format_speed(bps):
     bps = float(bps)
-    if bps >= 1000000:
-        return f"{bps / 1000000:.1f} Mbps"
-    elif bps >= 1000:
-        return f"{bps / 1000:.1f} kbps"
-    else:
-        return f"{bps} bps"
+    # Always display in Mbps as requested by the user
+    return f"{bps / 1000000:.1f} Mbps"
 
 async def get_interface_stats(client, interface_name):
     try:
