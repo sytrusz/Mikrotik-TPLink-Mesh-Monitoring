@@ -1,6 +1,6 @@
-# Network Status Dashboard 📡
+# Network Status Dashboard (MikroTik + TP-Link Deco) 📡
 
-A real-time network monitoring dashboard designed for home/office setups with **Dual-ISP failover** and **Mesh Wi-Fi** systems. 
+A real-time monitoring dashboard specialized for **MikroTik routers** and **TP-Link Deco Mesh** systems with Dual-ISP failover. 
 
 This project solves the "True-Negative" problem where a router interface shows "Connected" even when the internet is experiencing a brownout or service failure.
 
