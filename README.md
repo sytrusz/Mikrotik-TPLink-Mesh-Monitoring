@@ -1,4 +1,4 @@
-# Home Network Monitor 📡
+# Mikrotik-TPLink-Mesh-Monitoring 📡
 
 A real-time, sleek monitoring dashboard specialized for **MikroTik routers** and **TP-Link Deco Mesh** systems with Dual-ISP failover. 
 
