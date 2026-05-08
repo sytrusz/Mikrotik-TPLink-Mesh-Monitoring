@@ -145,13 +145,18 @@ export default function Home() {
               
               return (
                 <div key={name} className="bg-[#161616] p-6 rounded-[20px] shadow-lg border border-[#222]">
-                  <div className="flex justify-between items-center mb-10">
+                  <div className="flex justify-between items-start mb-10">
                     <h3 className="text-[22px] font-medium text-white">{displayName}</h3>
                     
-                    <div className="bg-white px-3 py-1 rounded-full flex items-center shadow-sm">
-                      <span className={`w-1.5 h-1.5 rounded-full mr-2 ${isOnline ? 'bg-[#10B981]' : 'bg-red-500'}`}></span>
-                      <span className={`text-[11px] font-bold uppercase tracking-wide ${isOnline ? 'text-emerald-700' : 'text-red-700'}`}>
-                        {isOnline ? 'Online' : 'Offline'}
+                    <div className="flex flex-col items-end">
+                      <div className="bg-white px-3 py-1 rounded-full flex items-center shadow-sm mb-1.5">
+                        <span className={`w-1.5 h-1.5 rounded-full mr-2 ${isOnline ? 'bg-[#10B981]' : 'bg-red-500'}`}></span>
+                        <span className={`text-[11px] font-bold uppercase tracking-wide ${isOnline ? 'text-emerald-700' : 'text-red-700'}`}>
+                          {isp.status}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-gray-500 font-medium tracking-wide">
+                        as of {isp.statusChangedAt ? new Date(isp.statusChangedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : '...'}
                       </span>
                     </div>
                   </div>

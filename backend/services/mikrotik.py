@@ -47,11 +47,12 @@ async def get_interface_stats(client, interface_name):
             return {
                 "rx": format_speed(data.get("rx-bits-per-second", 0)),
                 "tx": format_speed(data.get("tx-bits-per-second", 0)),
-                "rx_bps": float(data.get("rx-bits-per-second", 0))
+                "rx_bps": float(data.get("rx-bits-per-second", 0)),
+                "tx_bps": float(data.get("tx-bits-per-second", 0))
             }
     except Exception:
         pass
-    return {"rx": "0 bps", "tx": "0 bps", "rx_bps": 0}
+    return {"rx": "0.0 Mbps", "tx": "0.0 Mbps", "rx_bps": 0, "tx_bps": 0}
 
 async def check_internet_reachability(client, interface_name, routing_table=None):
     try:
@@ -109,39 +110,66 @@ async def get_isp_status():
         results = await asyncio.gather(*(stats_tasks + reach_tasks))
         stats1, stats2, (has_internet1, lat1), (has_internet2, lat2) = results
 
-        def determine_status(label, interface_name, has_internet, rx_bps):
-            is_running = str(interfaces.get(interface_name, {}).get("running")).lower() == "true"
-            if not is_running:
-                return "OFFLINE"
-            
-            # STABILITY LOGIC:
-            # 1. If ping succeeds -> Always ONLINE
-            # 2. If ping fails but traffic > 50kbps -> Likely ONLINE (ping was just blocked)
-            # 3. We use a 10s 'grace period' where it must fail BOTH for 10s before showing NO INTERNET
-            
-            current_is_up = has_internet or rx_bps > 50000
+        def determine_status(label, interface_name, has_internet, rx_bps, tx_bps, latency):
             now = datetime.now()
+            if label not in status_cache:
+                status_cache[label] = {"status": "NO INTERNET", "pending_status": None, "pending_since": None, "status_changed_at": now}
             
-            if current_is_up:
-                status_cache[label] = {"status": "ONLINE", "last_up": now}
-                return "ONLINE"
+            cached = status_cache[label]
             
-            # If failing, check if it was UP recently (within last 15 seconds)
-            last_up = status_cache.get(label, {}).get("last_up")
-            if last_up and (now - last_up) < timedelta(seconds=15):
-                return "ONLINE" # Suppress flicker
+            is_disabled = str(interfaces.get(interface_name, {}).get("disabled")).lower() == "true"
+            if is_disabled:
+                if cached["status"] != "OFFLINE":
+                    print(f"[{now.strftime('%H:%M:%S')}] {label.upper()}: Manually Disabled -> OFFLINE")
+                    cached["status"] = "OFFLINE"
+                    cached["status_changed_at"] = now
+                return cached["status"]
+            
+            # 1. Determine Instantaneous Reading
+            if has_internet or rx_bps > 5000000: # 5 Mbps threshold
+                current_reading = "ONLINE"
+            elif latency == 0 and rx_bps == 0 and tx_bps == 0:
+                current_reading = "OFFLINE"
+            else:
+                current_reading = "NO INTERNET"
+                
+            # 2. Apply 30-Second Debounce Logic
+            if current_reading == cached["status"]:
+                # Reading matches status, we are stable. Reset any pending changes.
+                cached["pending_status"] = None
+                cached["pending_since"] = None
+            else:
+                if cached.get("pending_status") == current_reading:
+                    # We are waiting for this new reading to mature
+                    pending_since = cached.get("pending_since", now)
+                    if (now - pending_since) >= timedelta(seconds=30):
+                        # 30 seconds have passed! Apply the new status.
+                        print(f"[{now.strftime('%H:%M:%S')}] {label.upper()}: Status verified -> {current_reading}")
+                        cached["status"] = current_reading
+                        cached["status_changed_at"] = now
+                        cached["pending_status"] = None
+                        cached["pending_since"] = None
+                else:
+                    # A new divergent reading has appeared, start the 30s timer
+                    cached["pending_status"] = current_reading
+                    cached["pending_since"] = now
+                    
+            return cached["status"]
 
-            return "NO INTERNET"
+        stat1_status = determine_status(WAN1_LABEL, WAN1_NAME, has_internet1, stats1["rx_bps"], stats1["tx_bps"], lat1)
+        stat2_status = determine_status(WAN2_LABEL, WAN2_NAME, has_internet2, stats2["rx_bps"], stats2["tx_bps"], lat2)
 
         return {
             WAN1_LABEL.lower(): {
-                "status": determine_status(WAN1_LABEL, WAN1_NAME, has_internet1, stats1["rx_bps"]),
+                "status": stat1_status,
+                "statusChangedAt": status_cache[WAN1_LABEL]["status_changed_at"].isoformat() + "Z",
                 "latencyMs": lat1,
                 "rx": stats1["rx"],
                 "tx": stats1["tx"]
             },
             WAN2_LABEL.lower(): {
-                "status": determine_status(WAN2_LABEL, WAN2_NAME, has_internet2, stats2["rx_bps"]),
+                "status": stat2_status,
+                "statusChangedAt": status_cache[WAN2_LABEL]["status_changed_at"].isoformat() + "Z",
                 "latencyMs": lat2,
                 "rx": stats2["rx"],
                 "tx": stats2["tx"]
