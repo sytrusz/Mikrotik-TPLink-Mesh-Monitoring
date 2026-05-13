@@ -36,14 +36,6 @@ def log_status_change(isp_label, old_status, new_status, timestamp=None):
             if log["isp"] == isp_label and log["recovered_at"] is None:
                 log["recovered_at"] = timestamp
                 break
-        else:
-            # If no unresolved outage is found, just log a recovery
-            logs.insert(0, {
-                "isp": isp_label,
-                "dropped_at": None,
-                "recovered_at": timestamp,
-                "reason": "---"
-            })
             
     # Keep only the last 5-10 logs
     logs = logs[:10]

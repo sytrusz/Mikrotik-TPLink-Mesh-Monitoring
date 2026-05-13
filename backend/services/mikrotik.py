@@ -1,3 +1,10 @@
+async def trigger_status_report():
+    """Helper to send a status report after a short delay."""
+    await asyncio.sleep(2)
+    from services.telegram_bot import get_status_message, send_notification
+    msg = await get_status_message()
+    await send_notification(msg)
+
 # backend/services/mikrotik.py
 import httpx
 import os
@@ -5,6 +12,7 @@ import asyncio
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from services.outage_logger import log_status_change
+from services.telegram_bot import send_notification
 
 load_dotenv()
 
@@ -89,6 +97,20 @@ async def check_internet_reachability(client, interface_name, routing_table=None
     except Exception:
         pass
     return False, 0
+
+async def disable_mikrotik_interface(interface_name):
+    """Actively disables an interface via MikroTik REST API."""
+    try:
+        async with httpx.AsyncClient(auth=(USER, PASS), verify=False) as client:
+            resp = await client.patch(
+                f"{BASE_URL}/interface/{interface_name}",
+                json={"disabled": "true"},
+                timeout=10.0
+            )
+            return resp.status_code in [200, 204]
+    except Exception as e:
+        print(f"Error disabling interface {interface_name}: {e}")
+        return False
 
 async def get_router_health():
     async with httpx.AsyncClient(base_url=BASE_URL, auth=(USER, PASS), verify=False) as client:
@@ -188,12 +210,28 @@ async def get_isp_status():
                     pending_since = cached.get("pending_since", now)
                     if (now - pending_since) >= timedelta(seconds=30):
                         # 30 seconds have passed! Apply the new status.
+                        old_status = cached["status"]
                         print(f"[{now.strftime('%H:%M:%S')}] {label.upper()}: Status verified -> {current_reading}")
-                        log_status_change(label.upper(), cached["status"], current_reading, now.isoformat() + "Z")
+                        log_status_change(label.upper(), old_status, current_reading, now.isoformat() + "Z")
                         cached["status"] = current_reading
                         cached["status_changed_at"] = now
                         cached["pending_status"] = None
                         cached["pending_since"] = None
+
+                        # --- TRIGGER CHAT-OPS ---
+                        if current_reading in ["NO INTERNET", "OFFLINE"] and old_status == "ONLINE":
+                            # Auto-disable interface
+                            asyncio.create_task(disable_mikrotik_interface(interface_name))
+                            # Send Telegram alert with button
+                            asyncio.create_task(send_notification(
+                                text=f"🚨 *{label.upper()} IS DOWN*\nStatus: {current_reading}\nAction: Auto-disabled port to force failover.",
+                                buttons=[{"text": f"✅ Re-enable {label}", "callback_data": f"enable_{interface_name}"}]
+                            ))
+                            asyncio.create_task(trigger_status_report())
+                        elif current_reading == "ONLINE" and old_status in ["NO INTERNET", "OFFLINE"]:
+                            # Send recovery notification
+                            asyncio.create_task(send_notification(text=f"✅ *{label.upper()} RECOVERED*\nStatus is now ONLINE."))
+                            asyncio.create_task(trigger_status_report())
                 else:
                     # A new divergent reading has appeared, start the 30s timer
                     cached["pending_status"] = current_reading

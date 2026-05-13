@@ -15,6 +15,10 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Network Status",
   description: "Network status dashboard for home wifi connections",
+
+  icons: {
+  icon: '/favicon.svg',
+  },
 };
 
 export default function RootLayout({

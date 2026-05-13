@@ -6,6 +6,7 @@ from datetime import datetime
 from services.mikrotik import get_isp_status, get_router_health
 from services.deco import get_mesh_status
 from services.outage_logger import get_outage_logs
+from services.telegram_bot import start_bot, stop_bot
 
 # Global cache to hold the latest data
 app_cache = {
@@ -37,10 +38,13 @@ async def poll_hardware():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Start the background polling task when the server starts
-    task = asyncio.create_task(poll_hardware())
+    polling_task = asyncio.create_task(poll_hardware())
+    # Start the Telegram Bot listener
+    bot_task = asyncio.create_task(start_bot())
     yield
     # Clean up the task when the server shuts down
-    task.cancel()
+    polling_task.cancel()
+    await stop_bot()
 
 app = FastAPI(lifespan=lifespan)
 
