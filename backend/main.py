@@ -1,10 +1,48 @@
+import asyncio
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
-from services.mikrotik import get_isp_status
+from services.mikrotik import get_isp_status, get_router_health
 from services.deco import get_mesh_status
+from services.outage_logger import get_outage_logs
 
-app = FastAPI()
+# Global cache to hold the latest data
+app_cache = {
+    "isps": {},
+    "mesh": {"nodes": [], "totalClients": "---", "overallStatus": "Loading..."},
+    "router_health": {"cpu": "---", "ram": "---", "temp": "---", "uptime": "---"},
+    "outages": [],
+    "timestamp": None
+}
+
+async def poll_hardware():
+    while True:
+        try:
+            isps = await get_isp_status()
+            mesh = await get_mesh_status()
+            router_health = await get_router_health()
+            outages = get_outage_logs()
+            
+            app_cache["isps"] = isps
+            app_cache["mesh"] = mesh
+            app_cache["router_health"] = router_health
+            app_cache["outages"] = outages
+            app_cache["timestamp"] = datetime.utcnow().isoformat() + "Z"
+        except Exception as e:
+            print(f"Background polling error: {e}")
+        # Wait 5 seconds before fetching again
+        await asyncio.sleep(5)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Start the background polling task when the server starts
+    task = asyncio.create_task(poll_hardware())
+    yield
+    # Clean up the task when the server shuts down
+    task.cancel()
+
+app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -16,10 +54,8 @@ app.add_middleware(
 
 @app.get("/api/status")
 async def read_status():
-    isps = await get_isp_status()
-    mesh = await get_mesh_status()
-    return {
-        "isps": isps,
-        "mesh": mesh,
-        "timestamp": datetime.utcnow().isoformat() + "Z"
-    }
+    # Instantly return the cached data instead of waiting for the hardware
+    if not app_cache["timestamp"]:
+        # Fallback if accessed before the first poll finishes
+        app_cache["timestamp"] = datetime.utcnow().isoformat() + "Z"
+    return app_cache

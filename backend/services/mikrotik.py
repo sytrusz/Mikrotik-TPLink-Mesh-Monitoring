@@ -4,6 +4,7 @@ import os
 import asyncio
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
+from services.outage_logger import log_status_change
 
 load_dotenv()
 
@@ -89,6 +90,48 @@ async def check_internet_reachability(client, interface_name, routing_table=None
         pass
     return False, 0
 
+async def get_router_health():
+    async with httpx.AsyncClient(base_url=BASE_URL, auth=(USER, PASS), verify=False) as client:
+        try:
+            r1 = await client.get("/system/resource", timeout=5.0)
+            r2 = await client.get("/system/health", timeout=5.0)
+            
+            res = r1.json() if r1.status_code == 200 else {}
+            health = r2.json() if r2.status_code == 200 else []
+            
+            temp = "---"
+            for h in health:
+                if h.get("name") == "temperature":
+                    temp = h.get("value") + "°C"
+            
+            # CPU
+            cpu = res.get("cpu-load", "---") + "%" if res.get("cpu-load") else "---"
+            
+            # RAM
+            free_mem = int(res.get("free-memory", 0))
+            total_mem = int(res.get("total-memory", 0))
+            if total_mem > 0:
+                used_mem = total_mem - free_mem
+                ram_percent = int((used_mem / total_mem) * 100)
+                ram = f"{ram_percent}%"
+            else:
+                ram = "---"
+                
+            return {
+                "cpu": cpu,
+                "ram": ram,
+                "temp": temp,
+                "uptime": res.get("uptime", "---")
+            }
+        except Exception as e:
+            print(f"Error fetching router health: {e}")
+            return {
+                "cpu": "---",
+                "ram": "---",
+                "temp": "---",
+                "uptime": "---"
+            }
+
 async def get_isp_status():
     async with httpx.AsyncClient(base_url=BASE_URL, auth=(USER, PASS), verify=False) as client:
         try:
@@ -111,7 +154,7 @@ async def get_isp_status():
         stats1, stats2, (has_internet1, lat1), (has_internet2, lat2) = results
 
         def determine_status(label, interface_name, has_internet, rx_bps, tx_bps, latency):
-            now = datetime.now()
+            now = datetime.utcnow()
             if label not in status_cache:
                 status_cache[label] = {"status": "NO INTERNET", "pending_status": None, "pending_since": None, "status_changed_at": now}
             
@@ -121,6 +164,7 @@ async def get_isp_status():
             if is_disabled:
                 if cached["status"] != "OFFLINE":
                     print(f"[{now.strftime('%H:%M:%S')}] {label.upper()}: Manually Disabled -> OFFLINE")
+                    log_status_change(label.upper(), cached["status"], "OFFLINE", now.isoformat() + "Z")
                     cached["status"] = "OFFLINE"
                     cached["status_changed_at"] = now
                 return cached["status"]
@@ -145,6 +189,7 @@ async def get_isp_status():
                     if (now - pending_since) >= timedelta(seconds=30):
                         # 30 seconds have passed! Apply the new status.
                         print(f"[{now.strftime('%H:%M:%S')}] {label.upper()}: Status verified -> {current_reading}")
+                        log_status_change(label.upper(), cached["status"], current_reading, now.isoformat() + "Z")
                         cached["status"] = current_reading
                         cached["status_changed_at"] = now
                         cached["pending_status"] = None

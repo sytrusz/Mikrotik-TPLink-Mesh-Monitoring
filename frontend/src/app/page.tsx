@@ -89,17 +89,51 @@ export default function Home() {
     return { title, subtitle: subtitle.toUpperCase() };
   };
 
+  const getDurationString = (statusChangedAt: string, currentStatus: string) => {
+    if (!statusChangedAt) return '...';
+    const changedTime = new Date(statusChangedAt).getTime();
+    const now = time.getTime();
+    const diffInSeconds = Math.floor(Math.max(0, now - changedTime) / 1000);
+    const totalMinutes = Math.floor(diffInSeconds / 60);
+    
+    if (currentStatus === 'ONLINE') {
+      if (totalMinutes < 5) return 'Recently connected';
+      
+      const roundedMinutes = Math.floor(totalMinutes / 5) * 5;
+      const hours = Math.floor(roundedMinutes / 60);
+      const minutes = roundedMinutes % 60;
+      
+      if (hours > 0) {
+        if (minutes === 0) return `for ${hours}h`;
+        return `for ${hours}h ${minutes}m`;
+      }
+      return `for ${minutes}m`;
+    } else {
+      const changedDate = new Date(statusChangedAt);
+      return `since ${changedDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`;
+    }
+  };
+
   return (
     <main className="min-h-screen bg-black text-gray-200 p-4 md:p-10 font-sans selection:bg-gray-800 selection:text-white">
       <div className="max-w-5xl mx-auto">
         
         {/* HEADER */}
-        <header className="flex justify-between items-end mb-12">
+        <header className="flex justify-between items-end mb-8">
           <div>
             <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-widest mb-1">
               {process.env.NEXT_PUBLIC_NETWORK_NAME || 'Home Network'}
             </div>
-            <h1 className="text-3xl font-semibold text-white tracking-tight">Network Status</h1>
+            <h1 className="text-3xl font-semibold text-white tracking-tight mb-3">Network Status</h1>
+            
+            {data.router_health && (
+              <div className="flex items-center gap-4 text-[11px] text-gray-400 font-mono bg-[#161616] px-3 py-1.5 rounded-md border border-[#222] inline-flex">
+                <span>CPU: <span className="text-white">{data.router_health.cpu}</span></span>
+                <span>RAM: <span className="text-white">{data.router_health.ram}</span></span>
+                <span>TEMP: <span className="text-white">{data.router_health.temp}</span></span>
+                <span>UPTIME: <span className="text-white">{data.router_health.uptime}</span></span>
+              </div>
+            )}
           </div>
           <div className="text-right">
             <div className="text-xl text-gray-300 font-medium mb-1 tracking-wide">
@@ -156,7 +190,7 @@ export default function Home() {
                         </span>
                       </div>
                       <span className="text-[10px] text-gray-500 font-medium tracking-wide">
-                        as of {isp.statusChangedAt ? new Date(isp.statusChangedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : '...'}
+                        {getDurationString(isp.statusChangedAt, isp.status)}
                       </span>
                     </div>
                   </div>
@@ -265,6 +299,41 @@ export default function Home() {
           </div>
         </section>
 
+        {/* OUTAGE HISTORY */}
+        {data.outages && data.outages.length > 0 && (
+          <section className="mb-10">
+            <div className="flex justify-between items-end mb-4">
+              <h2 className="text-[11px] font-semibold text-gray-500 uppercase tracking-widest">Recent Outages</h2>
+            </div>
+            <div className="bg-[#161616] rounded-[20px] shadow-lg border border-[#222] overflow-hidden">
+              <table className="w-full text-left text-sm text-gray-400">
+                <thead className="bg-[#1a1a1a] text-[10px] uppercase tracking-widest text-gray-500 border-b border-[#262626]">
+                  <tr>
+                    <th className="px-6 py-3 font-semibold">ISP</th>
+                    <th className="px-6 py-3 font-semibold">Status</th>
+                    <th className="px-6 py-3 font-semibold">Dropped At</th>
+                    <th className="px-6 py-3 font-semibold">Recovered At</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#262626]">
+                  {data.outages.map((outage: any, i: number) => (
+                    <tr key={i} className="hover:bg-[#1a1a1a] transition-colors">
+                      <td className="px-6 py-4 font-medium text-white">{outage.isp}</td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide ${outage.reason === 'OFFLINE' ? 'bg-red-900/30 text-red-500' : 'bg-orange-900/30 text-orange-500'}`}>
+                          {outage.reason}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">{outage.dropped_at ? new Date(outage.dropped_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) : '---'}</td>
+                      <td className="px-6 py-4">{outage.recovered_at ? new Date(outage.recovered_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) : 'Ongoing'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+
         {/* FOOTER */}
         <footer className="flex justify-between items-center text-[13px] text-gray-500 pt-2 px-2 pb-6">
           <div>
@@ -279,7 +348,7 @@ export default function Home() {
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
             </div>
-            Refreshes every 5s
+            {data.timestamp ? `Last checked: ${new Date(data.timestamp).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true })}` : 'Refreshes every 5s'}
           </div>
         </footer>
 

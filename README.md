@@ -96,7 +96,9 @@ Visit the dashboard at: `http://<your-host-ip>:3000` (e.g., `http://192.168.1.10
 - [x] True-Negative internet detection logic
 - [x] Next.js Dashboard UI (Modern Dark Theme)
 - [x] Deco Mesh API (per-node client routing & caching)
-- [ ] Docker Compose support for easy deployment
+- [ ] Daily Automated Speed Tests
+- [ ] Push Notifications (Telegram / Discord)
+- [ ] Automated Failover Trigger (MikroTik Interface Disabler)
 
 ## 📄 License
 This project is licensed under the MIT License.
