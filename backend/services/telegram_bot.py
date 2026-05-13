@@ -25,6 +25,21 @@ telegram_request = HTTPXRequest(
     connect_timeout=30.0
 )
 
+async def get_status_message():
+    """Generates the current status message string."""
+    from main import app_cache
+    msg = "🌐 *Current Network Status*\n\n"
+    for name, isp in app_cache["isps"].items():
+        status_emoji = "🟢" if isp["status"] == "ONLINE" else "🔴"
+        msg += f"{status_emoji} *{name.upper()}*: {isp['status']}\n"
+        msg += f"   - Latency: {isp['latencyMs']}ms\n"
+        msg += f"   - Speed: ↓{isp['rx']} ↑{isp['tx']}\n\n"
+    
+    msg += f"💻 *Router Health*\n"
+    msg += f"   - CPU: {app_cache['router_health']['cpu']}\n"
+    msg += f"   - Temp: {app_cache['router_health']['temp']}\n"
+    return msg
+
 async def send_notification(text, buttons=None):
     """Sends a push notification to the user's Telegram."""
     if not TOKEN or not CHAT_ID:
@@ -42,20 +57,8 @@ async def send_notification(text, buttons=None):
         print(f"Telegram notification error: {e}")
 
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    from main import app_cache
     if str(update.effective_chat.id) != str(CHAT_ID): return
-
-    msg = "🌐 *Current Network Status*\n\n"
-    for name, isp in app_cache["isps"].items():
-        status_emoji = "🟢" if isp["status"] == "ONLINE" else "🔴"
-        msg += f"{status_emoji} *{name.upper()}*: {isp['status']}\n"
-        msg += f"   - Latency: {isp['latencyMs']}ms\n"
-        msg += f"   - Speed: ↓{isp['rx']} ↑{isp['tx']}\n\n"
-    
-    msg += f"💻 *Router Health*\n"
-    msg += f"   - CPU: {app_cache['router_health']['cpu']}\n"
-    msg += f"   - Temp: {app_cache['router_health']['temp']}\n"
-    
+    msg = await get_status_message()
     await update.message.reply_text(msg, parse_mode='Markdown')
 
 async def logs_command(update: Update, context: ContextTypes.DEFAULT_TYPE):

@@ -1,3 +1,10 @@
+async def trigger_status_report():
+    """Helper to send a status report after a short delay."""
+    await asyncio.sleep(2)
+    from services.telegram_bot import get_status_message, send_notification
+    msg = await get_status_message()
+    await send_notification(msg)
+
 # backend/services/mikrotik.py
 import httpx
 import os
@@ -220,9 +227,11 @@ async def get_isp_status():
                                 text=f"🚨 *{label.upper()} IS DOWN*\nStatus: {current_reading}\nAction: Auto-disabled port to force failover.",
                                 buttons=[{"text": f"✅ Re-enable {label}", "callback_data": f"enable_{interface_name}"}]
                             ))
+                            asyncio.create_task(trigger_status_report())
                         elif current_reading == "ONLINE" and old_status in ["NO INTERNET", "OFFLINE"]:
                             # Send recovery notification
                             asyncio.create_task(send_notification(text=f"✅ *{label.upper()} RECOVERED*\nStatus is now ONLINE."))
+                            asyncio.create_task(trigger_status_report())
                 else:
                     # A new divergent reading has appeared, start the 30s timer
                     cached["pending_status"] = current_reading
