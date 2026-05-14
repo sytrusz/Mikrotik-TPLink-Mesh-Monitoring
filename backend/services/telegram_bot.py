@@ -24,6 +24,12 @@ telegram_request = HTTPXRequest(
     connect_timeout=30.0
 )
 
+def is_authorized(chat_id):
+    """Checks if the user's chat ID is in the allowed list."""
+    if not CHAT_ID: return False
+    allowed_ids = [cid.strip() for cid in CHAT_ID.split(',')]
+    return str(chat_id) in allowed_ids
+
 async def get_status_message():
     """Generates the current status message string."""
     from main import app_cache
@@ -40,29 +46,32 @@ async def get_status_message():
     return msg
 
 async def send_notification(text, buttons=None):
-    """Sends a push notification to the user's Telegram."""
+    """Sends a push notification to all authorized Telegram users."""
     if not TOKEN or not CHAT_ID:
         return
     
-    try:
-        bot = Bot(token=TOKEN, request=telegram_request)
-        reply_markup = None
-        if buttons:
-            keyboard = [[InlineKeyboardButton(b['text'], callback_data=b['callback_data'])] for b in buttons]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-        await bot.send_message(chat_id=CHAT_ID, text=text, reply_markup=reply_markup, parse_mode='Markdown')
-    except Exception as e:
-        print(f"Telegram notification error: {e}")
+    allowed_ids = [cid.strip() for cid in CHAT_ID.split(',')]
+    bot = Bot(token=TOKEN, request=telegram_request)
+    
+    reply_markup = None
+    if buttons:
+        keyboard = [[InlineKeyboardButton(b['text'], callback_data=b['callback_data'])] for b in buttons]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+    for cid in allowed_ids:
+        try:
+            await bot.send_message(chat_id=cid, text=text, reply_markup=reply_markup, parse_mode='Markdown')
+        except Exception as e:
+            print(f"Telegram notification error for {cid}: {e}")
 
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if str(update.effective_chat.id) != str(CHAT_ID): return
+    if not is_authorized(update.effective_chat.id): return
     msg = await get_status_message()
     await update.message.reply_text(msg, parse_mode='Markdown')
 
 async def logs_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from main import app_cache
-    if str(update.effective_chat.id) != str(CHAT_ID): return
+    if not is_authorized(update.effective_chat.id): return
 
     outages = app_cache.get("outages", [])
     if not outages:
@@ -78,7 +87,7 @@ async def logs_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def mesh_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from main import app_cache
-    if str(update.effective_chat.id) != str(CHAT_ID): return
+    if not is_authorized(update.effective_chat.id): return
 
     mesh = app_cache.get("mesh", {})
     msg = "🏠 *Mesh Network*\n\n"
@@ -90,7 +99,7 @@ async def mesh_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode='Markdown')
 
 async def manage_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if str(update.effective_chat.id) != str(CHAT_ID): return
+    if not is_authorized(update.effective_chat.id): return
     
     # We get interface names from env to create the buttons
     wan1 = os.getenv("MIKROTIK_WAN1_NAME", "ether1")
@@ -112,7 +121,7 @@ async def manage_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    if str(update.effective_chat.id) != str(CHAT_ID): return
+    if not is_authorized(update.effective_chat.id): return
 
     data = query.data
     
