@@ -79,6 +79,11 @@ npm run start
 ```
 *(Serve the generated `out/` folder using Nginx or Python's `http.server`.)*
 
+### 3. Production Deployment (Optional)
+For a robust, 24/7 setup, you can run these services automatically in the background using Linux `systemd` and access the dashboard via a clean local domain name (e.g., `http://home.network`) without typing port numbers.
+
+👉 **See the [Deployment & Maintenance Guide](docs/DEPLOYMENT.md) for full, step-by-step instructions on background services, local DNS, and Telegram Bot setup.**
+
 ## ⚙️ Configuration (.env)
 
 | Variable | Description |
