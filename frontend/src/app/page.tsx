@@ -119,15 +119,26 @@ export default function Home() {
       <div className="max-w-5xl mx-auto">
         
         {/* HEADER */}
-        <header className="flex justify-between items-end mb-8">
-          <div>
-            <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-widest mb-1">
-              {process.env.NEXT_PUBLIC_NETWORK_NAME || 'Home Network'}
+        <header className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 gap-4">
+          <div className="w-full md:w-auto">
+            <div className="flex justify-between items-start w-full">
+              <div>
+                <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-widest mb-1">
+                  {process.env.NEXT_PUBLIC_NETWORK_NAME || 'Home Network'}
+                </div>
+                <h1 className="text-3xl font-semibold text-white tracking-tight mb-3">Network Status</h1>
+              </div>
+              <div className="md:hidden text-right">
+                <div className="text-lg text-gray-300 font-medium mb-1 tracking-wide">{timeStr}</div>
+                <div className="flex items-center justify-end text-xs text-gray-400">
+                  <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${allSystemsUp ? 'bg-green-500' : 'bg-red-500'}`}></span>
+                  {allSystemsUp ? 'All systems up' : 'System issues'}
+                </div>
+              </div>
             </div>
-            <h1 className="text-3xl font-semibold text-white tracking-tight mb-3">Network Status</h1>
             
             {data.router_health && (
-              <div className="flex items-center gap-4 text-[11px] text-gray-400 font-mono bg-[#161616] px-3 py-1.5 rounded-md border border-[#222] inline-flex">
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-[11px] text-gray-400 font-mono bg-[#161616] px-4 py-2 rounded-lg border border-[#222]">
                 <span>CPU: <span className="text-white">{data.router_health.cpu}</span></span>
                 <span>RAM: <span className="text-white">{data.router_health.ram}</span></span>
                 <span>TEMP: <span className="text-white">{data.router_health.temp}</span></span>
@@ -135,7 +146,7 @@ export default function Home() {
               </div>
             )}
           </div>
-          <div className="text-right">
+          <div className="hidden md:block text-right">
             <div className="text-xl text-gray-300 font-medium mb-1 tracking-wide">
               {timeStr}
             </div>
@@ -151,21 +162,23 @@ export default function Home() {
           <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-4 gap-4 md:gap-0">
             <h2 className="text-[11px] font-semibold text-gray-500 uppercase tracking-widest">Internet Connections</h2>
             
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6 bg-[#161616] px-4 py-2 rounded-lg border border-[#222]">
-              <div className="text-[10px] text-gray-500 uppercase tracking-widest">Live Usage</div>
+            <div className="flex flex-row items-center justify-between w-full md:w-auto gap-4 bg-[#161616] px-4 py-2 rounded-lg border border-[#222]">
+              <div className="text-[10px] text-gray-500 uppercase tracking-widest hidden sm:block">Live Usage</div>
               <div className="flex items-baseline gap-1">
                 <span className="text-green-500 text-[10px] mr-1">↓</span>
                 <span className="text-lg font-medium text-white">
                   {isps.reduce((acc: number, [_, isp]: [string, any]) => acc + parseFloat(parseSpeed(isp.rx).val || '0'), 0).toFixed(1)}
                 </span>
-                <span className="text-[11px] text-gray-500 font-mono">/ {MAX_PLAN_MBPS} Mbps</span>
+                <span className="text-[10px] text-gray-500 font-mono hidden sm:inline">/ {MAX_PLAN_MBPS} Mbps</span>
+                <span className="text-[10px] text-gray-500 font-mono sm:hidden">Mbps</span>
               </div>
               <div className="flex items-baseline gap-1">
                 <span className="text-blue-500 text-[10px] mr-1">↑</span>
                 <span className="text-lg font-medium text-white">
                   {isps.reduce((acc: number, [_, isp]: [string, any]) => acc + parseFloat(parseSpeed(isp.tx).val || '0'), 0).toFixed(1)}
                 </span>
-                <span className="text-[11px] text-gray-500 font-mono">/ {MAX_PLAN_MBPS} Mbps</span>
+                <span className="text-[10px] text-gray-500 font-mono hidden sm:inline">/ {MAX_PLAN_MBPS} Mbps</span>
+                <span className="text-[10px] text-gray-500 font-mono sm:hidden">Mbps</span>
               </div>
             </div>
           </div>
@@ -305,31 +318,33 @@ export default function Home() {
             <div className="flex justify-between items-end mb-4">
               <h2 className="text-[11px] font-semibold text-gray-500 uppercase tracking-widest">Recent Outages</h2>
             </div>
-            <div className="bg-[#161616] rounded-[20px] shadow-lg border border-[#222] overflow-hidden">
-              <table className="w-full text-left text-sm text-gray-400">
-                <thead className="bg-[#1a1a1a] text-[10px] uppercase tracking-widest text-gray-500 border-b border-[#262626]">
-                  <tr>
-                    <th className="px-6 py-3 font-semibold">ISP</th>
-                    <th className="px-6 py-3 font-semibold">Status</th>
-                    <th className="px-6 py-3 font-semibold">Dropped At</th>
-                    <th className="px-6 py-3 font-semibold">Recovered At</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#262626]">
-                  {data.outages.map((outage: any, i: number) => (
-                    <tr key={i} className="hover:bg-[#1a1a1a] transition-colors">
-                      <td className="px-6 py-4 font-medium text-white">{outage.isp}</td>
-                      <td className="px-6 py-4">
-                        <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide ${outage.reason === 'OFFLINE' ? 'bg-red-900/30 text-red-500' : 'bg-orange-900/30 text-orange-500'}`}>
-                          {outage.reason}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">{outage.dropped_at ? new Date(outage.dropped_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) : '---'}</td>
-                      <td className="px-6 py-4">{outage.recovered_at ? new Date(outage.recovered_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) : 'Ongoing'}</td>
+            <div className="bg-[#161616] rounded-[20px] shadow-lg border border-[#222] overflow-x-auto">
+              <div className="min-w-[500px]">
+                <table className="w-full text-left text-sm text-gray-400">
+                  <thead className="bg-[#1a1a1a] text-[10px] uppercase tracking-widest text-gray-500 border-b border-[#262626]">
+                    <tr>
+                      <th className="px-6 py-3 font-semibold">ISP</th>
+                      <th className="px-6 py-3 font-semibold">Status</th>
+                      <th className="px-6 py-3 font-semibold">Dropped At</th>
+                      <th className="px-6 py-3 font-semibold">Recovered At</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-[#262626]">
+                    {data.outages.map((outage: any, i: number) => (
+                      <tr key={i} className="hover:bg-[#1a1a1a] transition-colors">
+                        <td className="px-6 py-4 font-medium text-white">{outage.isp}</td>
+                        <td className="px-6 py-4">
+                          <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide ${outage.reason === 'OFFLINE' ? 'bg-red-900/30 text-red-500' : 'bg-orange-900/30 text-orange-500'}`}>
+                            {outage.reason}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4">{outage.dropped_at ? new Date(outage.dropped_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) : '---'}</td>
+                        <td className="px-6 py-4">{outage.recovered_at ? new Date(outage.recovered_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) : 'Ongoing'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </section>
         )}
