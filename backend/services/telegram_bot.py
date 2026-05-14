@@ -21,7 +21,6 @@ bot_app = None
 telegram_request = HTTPXRequest(
     http_version="1.1", 
     connection_pool_size=4,
-    read_timeout=30.0,
     connect_timeout=30.0
 )
 
@@ -90,22 +89,46 @@ async def mesh_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg += f"   - Speed: ↓{node['rx']} ↑{node['tx']}\n\n"
     await update.message.reply_text(msg, parse_mode='Markdown')
 
+async def manage_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if str(update.effective_chat.id) != str(CHAT_ID): return
+    
+    # We get interface names from env to create the buttons
+    wan1 = os.getenv("MIKROTIK_WAN1_NAME", "ether1")
+    wan2 = os.getenv("MIKROTIK_WAN2_NAME", "ether2")
+    
+    keyboard = [
+        [
+            InlineKeyboardButton(f"✅ Enable {wan1}", callback_data=f"enable_{wan1}"),
+            InlineKeyboardButton(f"❌ Disable {wan1}", callback_data=f"disable_{wan1}")
+        ],
+        [
+            InlineKeyboardButton(f"✅ Enable {wan2}", callback_data=f"enable_{wan2}"),
+            InlineKeyboardButton(f"❌ Disable {wan2}", callback_data=f"disable_{wan2}")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("🎛 *Router Interface Management*\nChoose a port to toggle:", reply_markup=reply_markup, parse_mode='Markdown')
+
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     if str(update.effective_chat.id) != str(CHAT_ID): return
 
     data = query.data
-    if data.startswith("enable_"):
-        interface_name = data.replace("enable_", "")
+    
+    if data.startswith("enable_") or data.startswith("disable_"):
+        action = "false" if data.startswith("enable_") else "true"
+        action_text = "re-enabled" if action == "false" else "disabled"
+        interface_name = data.replace("enable_", "").replace("disable_", "")
+        
         try:
             async with httpx.AsyncClient(auth=(MIKROTIK_USER, MIKROTIK_PASS), verify=False) as client:
                 resp = await client.patch(
                     f"{MIKROTIK_BASE_URL}/interface/{interface_name}",
-                    json={"disabled": "false"}, timeout=10.0
+                    json={"disabled": action}, timeout=10.0
                 )
                 if resp.status_code in [200, 204]:
-                    await query.edit_message_text(text=f"✅ Port *{interface_name}* re-enabled.")
+                    await query.edit_message_text(text=f"✅ Port *{interface_name}* has been {action_text}.")
                 else:
                     await query.edit_message_text(text=f"❌ Error: {resp.status_code}")
         except Exception as e:
@@ -117,6 +140,7 @@ async def start_bot():
     bot_app.add_handler(CommandHandler("status", status_command))
     bot_app.add_handler(CommandHandler("logs", logs_command))
     bot_app.add_handler(CommandHandler("mesh", mesh_command))
+    bot_app.add_handler(CommandHandler("manage", manage_command))
     bot_app.add_handler(CallbackQueryHandler(button_handler))
     
     await bot_app.initialize()
