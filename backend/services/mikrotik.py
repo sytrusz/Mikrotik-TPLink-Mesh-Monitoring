@@ -98,163 +98,164 @@ async def check_internet_reachability(client, interface_name, routing_table=None
         pass
     return False, 0
 
+# Global persistent connection for MikroTik to prevent TCP socket exhaustion
+# Using HTTP/1.1 via limits to ensure stability
+limits = httpx.Limits(max_keepalive_connections=5, max_connections=10)
+mikrotik_client = httpx.AsyncClient(base_url=BASE_URL, auth=(USER, PASS), verify=False, timeout=10.0, limits=limits)
+
 async def disable_mikrotik_interface(interface_name):
     """Actively disables an interface via MikroTik REST API."""
     try:
-        async with httpx.AsyncClient(auth=(USER, PASS), verify=False) as client:
-            resp = await client.patch(
-                f"{BASE_URL}/interface/{interface_name}",
-                json={"disabled": "true"},
-                timeout=10.0
-            )
-            return resp.status_code in [200, 204]
+        resp = await mikrotik_client.patch(
+            f"/interface/{interface_name}",
+            json={"disabled": "true"}
+        )
+        return resp.status_code in [200, 204]
     except Exception as e:
         print(f"Error disabling interface {interface_name}: {e}")
         return False
 
 async def get_router_health():
-    async with httpx.AsyncClient(base_url=BASE_URL, auth=(USER, PASS), verify=False) as client:
-        try:
-            r1 = await client.get("/system/resource", timeout=5.0)
-            r2 = await client.get("/system/health", timeout=5.0)
+    try:
+        r1 = await mikrotik_client.get("/system/resource")
+        r2 = await mikrotik_client.get("/system/health")
+        
+        res = r1.json() if r1.status_code == 200 else {}
+        health = r2.json() if r2.status_code == 200 else []
+        
+        temp = "---"
+        for h in health:
+            if h.get("name") == "temperature":
+                temp = h.get("value") + "°C"
+        
+        # CPU
+        cpu = res.get("cpu-load", "---") + "%" if res.get("cpu-load") else "---"
+        
+        # RAM
+        free_mem = int(res.get("free-memory", 0))
+        total_mem = int(res.get("total-memory", 0))
+        if total_mem > 0:
+            used_mem = total_mem - free_mem
+            ram_percent = int((used_mem / total_mem) * 100)
+            ram = f"{ram_percent}%"
+        else:
+            ram = "---"
             
-            res = r1.json() if r1.status_code == 200 else {}
-            health = r2.json() if r2.status_code == 200 else []
-            
-            temp = "---"
-            for h in health:
-                if h.get("name") == "temperature":
-                    temp = h.get("value") + "°C"
-            
-            # CPU
-            cpu = res.get("cpu-load", "---") + "%" if res.get("cpu-load") else "---"
-            
-            # RAM
-            free_mem = int(res.get("free-memory", 0))
-            total_mem = int(res.get("total-memory", 0))
-            if total_mem > 0:
-                used_mem = total_mem - free_mem
-                ram_percent = int((used_mem / total_mem) * 100)
-                ram = f"{ram_percent}%"
-            else:
-                ram = "---"
-                
-            return {
-                "cpu": cpu,
-                "ram": ram,
-                "temp": temp,
-                "uptime": res.get("uptime", "---")
-            }
-        except Exception as e:
-            print(f"Error fetching router health: {e}")
-            return {
-                "cpu": "---",
-                "ram": "---",
-                "temp": "---",
-                "uptime": "---"
-            }
+        return {
+            "cpu": cpu,
+            "ram": ram,
+            "temp": temp,
+            "uptime": res.get("uptime", "---")
+        }
+    except Exception as e:
+        print(f"Error fetching router health: {e}")
+        return {
+            "cpu": "---",
+            "ram": "---",
+            "temp": "---",
+            "uptime": "---"
+        }
 
 async def get_isp_status():
-    async with httpx.AsyncClient(base_url=BASE_URL, auth=(USER, PASS), verify=False) as client:
-        try:
-            resp = await client.get("/interface")
-            interfaces = {i["name"]: i for i in resp.json()}
-        except Exception:
-            interfaces = {}
+    try:
+        resp = await mikrotik_client.get("/interface")
+        interfaces = {i["name"]: i for i in resp.json()}
+    except Exception:
+        interfaces = {}
 
-        # Parallelize all network checks
-        stats_tasks = [
-            get_interface_stats(client, WAN1_NAME),
-            get_interface_stats(client, WAN2_NAME)
-        ]
-        reach_tasks = [
-            check_internet_reachability(client, WAN1_NAME, routing_table=WAN1_TABLE),
-            check_internet_reachability(client, WAN2_NAME, routing_table=WAN2_TABLE)
-        ]
+    # Parallelize all network checks
+    stats_tasks = [
+        get_interface_stats(mikrotik_client, WAN1_NAME),
+        get_interface_stats(mikrotik_client, WAN2_NAME)
+    ]
+    reach_tasks = [
+        check_internet_reachability(mikrotik_client, WAN1_NAME, routing_table=WAN1_TABLE),
+        check_internet_reachability(mikrotik_client, WAN2_NAME, routing_table=WAN2_TABLE)
+    ]
 
-        results = await asyncio.gather(*(stats_tasks + reach_tasks))
-        stats1, stats2, (has_internet1, lat1), (has_internet2, lat2) = results
+    results = await asyncio.gather(*(stats_tasks + reach_tasks))
+    stats1, stats2, (has_internet1, lat1), (has_internet2, lat2) = results
 
-        def determine_status(label, interface_name, has_internet, rx_bps, tx_bps, latency):
-            now = datetime.utcnow()
-            if label not in status_cache:
-                status_cache[label] = {"status": "NO INTERNET", "pending_status": None, "pending_since": None, "status_changed_at": now}
-            
-            cached = status_cache[label]
-            
-            is_disabled = str(interfaces.get(interface_name, {}).get("disabled")).lower() == "true"
-            if is_disabled:
-                if cached["status"] != "OFFLINE":
-                    print(f"[{now.strftime('%H:%M:%S')}] {label.upper()}: Manually Disabled -> OFFLINE")
-                    log_status_change(label.upper(), cached["status"], "OFFLINE", now.isoformat() + "Z")
-                    cached["status"] = "OFFLINE"
-                    cached["status_changed_at"] = now
-                return cached["status"]
-            
-            # 1. Determine Instantaneous Reading
-            if has_internet or rx_bps > 5000000: # 5 Mbps threshold
-                current_reading = "ONLINE"
-            elif latency == 0 and rx_bps == 0 and tx_bps == 0:
-                current_reading = "OFFLINE"
-            else:
-                current_reading = "NO INTERNET"
-                
-            # 2. Apply 30-Second Debounce Logic
-            if current_reading == cached["status"]:
-                # Reading matches status, we are stable. Reset any pending changes.
-                cached["pending_status"] = None
-                cached["pending_since"] = None
-            else:
-                if cached.get("pending_status") == current_reading:
-                    # We are waiting for this new reading to mature
-                    pending_since = cached.get("pending_since", now)
-                    if (now - pending_since) >= timedelta(seconds=30):
-                        # 30 seconds have passed! Apply the new status.
-                        old_status = cached["status"]
-                        print(f"[{now.strftime('%H:%M:%S')}] {label.upper()}: Status verified -> {current_reading}")
-                        log_status_change(label.upper(), old_status, current_reading, now.isoformat() + "Z")
-                        cached["status"] = current_reading
-                        cached["status_changed_at"] = now
-                        cached["pending_status"] = None
-                        cached["pending_since"] = None
-
-                        # --- TRIGGER CHAT-OPS ---
-                        if current_reading in ["NO INTERNET", "OFFLINE"] and old_status == "ONLINE":
-                            # Auto-disable interface
-                            asyncio.create_task(disable_mikrotik_interface(interface_name))
-                            # Send Telegram alert with button
-                            asyncio.create_task(send_notification(
-                                text=f"🚨 *{label.upper()} IS DOWN*\nStatus: {current_reading}\nAction: Auto-disabled port to force failover.",
-                                buttons=[{"text": f"✅ Re-enable {label}", "callback_data": f"enable_{interface_name}"}]
-                            ))
-                            asyncio.create_task(trigger_status_report())
-                        elif current_reading == "ONLINE" and old_status in ["NO INTERNET", "OFFLINE"]:
-                            # Send recovery notification
-                            asyncio.create_task(send_notification(text=f"✅ *{label.upper()} RECOVERED*\nStatus is now ONLINE."))
-                            asyncio.create_task(trigger_status_report())
-                else:
-                    # A new divergent reading has appeared, start the 30s timer
-                    cached["pending_status"] = current_reading
-                    cached["pending_since"] = now
-                    
+    def determine_status(label, interface_name, has_internet, rx_bps, tx_bps, latency):
+        now = datetime.utcnow()
+        if label not in status_cache:
+            status_cache[label] = {"status": "NO INTERNET", "pending_status": None, "pending_since": None, "status_changed_at": now}
+        
+        cached = status_cache[label]
+        
+        is_disabled = str(interfaces.get(interface_name, {}).get("disabled")).lower() == "true"
+        if is_disabled:
+            if cached["status"] != "OFFLINE":
+                print(f"[{now.strftime('%H:%M:%S')}] {label.upper()}: Manually Disabled -> OFFLINE")
+                log_status_change(label.upper(), cached["status"], "OFFLINE", now.isoformat() + "Z")
+                cached["status"] = "OFFLINE"
+                cached["status_changed_at"] = now
             return cached["status"]
+        
+        # 1. Determine Instantaneous Reading
+        if has_internet or rx_bps > 5000000: # 5 Mbps threshold
+            current_reading = "ONLINE"
+        elif latency == 0 and rx_bps == 0 and tx_bps == 0:
+            current_reading = "OFFLINE"
+        else:
+            current_reading = "NO INTERNET"
+            
+        # 2. Apply 30-Second Debounce Logic
+        if current_reading == cached["status"]:
+            # Reading matches status, we are stable. Reset any pending changes.
+            cached["pending_status"] = None
+            cached["pending_since"] = None
+        else:
+            if cached.get("pending_status") == current_reading:
+                # We are waiting for this new reading to mature
+                pending_since = cached.get("pending_since", now)
+                if (now - pending_since) >= timedelta(seconds=30):
+                    # 30 seconds have passed! Apply the new status.
+                    old_status = cached["status"]
+                    print(f"[{now.strftime('%H:%M:%S')}] {label.upper()}: Status verified -> {current_reading}")
+                    log_status_change(label.upper(), old_status, current_reading, now.isoformat() + "Z")
+                    cached["status"] = current_reading
+                    cached["status_changed_at"] = now
+                    cached["pending_status"] = None
+                    cached["pending_since"] = None
 
-        stat1_status = determine_status(WAN1_LABEL, WAN1_NAME, has_internet1, stats1["rx_bps"], stats1["tx_bps"], lat1)
-        stat2_status = determine_status(WAN2_LABEL, WAN2_NAME, has_internet2, stats2["rx_bps"], stats2["tx_bps"], lat2)
+                    # --- TRIGGER CHAT-OPS ---
+                    if current_reading in ["NO INTERNET", "OFFLINE"] and old_status == "ONLINE":
+                        # Auto-disable interface
+                        asyncio.create_task(disable_mikrotik_interface(interface_name))
+                        # Send Telegram alert with button
+                        asyncio.create_task(send_notification(
+                            text=f"🚨 *{label.upper()} IS DOWN*\nStatus: {current_reading}\nAction: Auto-disabled port to force failover.",
+                            buttons=[{"text": f"✅ Re-enable {label}", "callback_data": f"enable_{interface_name}"}]
+                        ))
+                        asyncio.create_task(trigger_status_report())
+                    elif current_reading == "ONLINE" and old_status in ["NO INTERNET", "OFFLINE"]:
+                        # Send recovery notification
+                        asyncio.create_task(send_notification(text=f"✅ *{label.upper()} RECOVERED*\nStatus is now ONLINE."))
+                        asyncio.create_task(trigger_status_report())
+            else:
+                # A new divergent reading has appeared, start the 30s timer
+                cached["pending_status"] = current_reading
+                cached["pending_since"] = now
+                
+        return cached["status"]
 
-        return {
-            WAN1_LABEL.lower(): {
-                "status": stat1_status,
-                "statusChangedAt": status_cache[WAN1_LABEL]["status_changed_at"].isoformat() + "Z",
-                "latencyMs": lat1,
-                "rx": stats1["rx"],
-                "tx": stats1["tx"]
-            },
-            WAN2_LABEL.lower(): {
-                "status": stat2_status,
-                "statusChangedAt": status_cache[WAN2_LABEL]["status_changed_at"].isoformat() + "Z",
-                "latencyMs": lat2,
-                "rx": stats2["rx"],
-                "tx": stats2["tx"]
-            }
+    stat1_status = determine_status(WAN1_LABEL, WAN1_NAME, has_internet1, stats1["rx_bps"], stats1["tx_bps"], lat1)
+    stat2_status = determine_status(WAN2_LABEL, WAN2_NAME, has_internet2, stats2["rx_bps"], stats2["tx_bps"], lat2)
+
+    return {
+        WAN1_LABEL.lower(): {
+            "status": stat1_status,
+            "statusChangedAt": status_cache[WAN1_LABEL]["status_changed_at"].isoformat() + "Z",
+            "latencyMs": lat1,
+            "rx": stats1["rx"],
+            "tx": stats1["tx"]
+        },
+        WAN2_LABEL.lower(): {
+            "status": stat2_status,
+            "statusChangedAt": status_cache[WAN2_LABEL]["status_changed_at"].isoformat() + "Z",
+            "latencyMs": lat2,
+            "rx": stats2["rx"],
+            "tx": stats2["tx"]
         }
+    }
